@@ -83,6 +83,7 @@
 #include "notifications.h"
 #include "hci/groups.h"
 #include "screens/chatscreen.h"
+#include "screens/guidescreen.h"
 #include "hci/quickchat.h"
 
 // Empty edit window
@@ -356,6 +357,12 @@ void setReticuleButtonDimensions(W_BUTTON &button, const WzString &filename)
 			return partX + partY <= 1.f;
 		});
 	}
+}
+
+optional<std::string> getReticuleButtonDisplayFilename(int ButId)
+{
+	ASSERT_OR_RETURN(nullopt, (ButId >= 0) && (ButId < NUMRETBUTS), "Invalid ButId: %d", ButId);
+	return retbutstats[ButId].filename.toUtf8();
 }
 
 void setReticuleStats(int ButId, std::string tip, std::string filename, std::string filenameDown, const playerCallbackFunc& callbackFunc)
@@ -995,6 +1002,7 @@ void interfaceShutDown()
 	}
 
 	shutdownChatScreen();
+	closeGuideScreen();
 	ChatDialogUp = false;
 
 	bAllowOtherKeyPresses = true;
@@ -1188,6 +1196,8 @@ void intResetScreen(bool NoAnim, bool skipMissionResultScreen /*= false*/)
 		}
 	}
 
+	auto startingIntMode = intMode;
+
 	switch (intMode)
 	{
 	case INT_DESIGN:
@@ -1228,7 +1238,10 @@ void intResetScreen(bool NoAnim, bool skipMissionResultScreen /*= false*/)
 	{
 		intRemoveMissionResultNoAnim();
 	}
-	intRemoveDesign();
+	if (startingIntMode == INT_DESIGN)
+	{
+		intRemoveDesign();
+	}
 	intHidePowerBar();
 
 	if (interfaceController)

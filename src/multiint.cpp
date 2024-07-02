@@ -54,6 +54,7 @@
 #include "lib/gamelib/gtime.h"
 #include "lib/netplay/netplay.h"
 #include "lib/netplay/netpermissions.h"
+#include "lib/netplay/port_mapping_manager.h"
 #include "lib/widget/editbox.h"
 #include "lib/widget/button.h"
 #include "lib/widget/scrollablelist.h"
@@ -119,9 +120,12 @@
 #include "hci/teamstrategy.h"
 #include "hci/chatoptions.h"
 #include "multivote.h"
+#include "campaigninfo.h"
+#include "screens/joiningscreen.h"
 
 #include "activity.h"
 #include <algorithm>
+#include <set>
 #include "3rdparty/gsl_finally.h"
 
 #define MAP_PREVIEW_DISPLAY_TIME 2500	// number of milliseconds to show map in preview
@@ -252,7 +256,6 @@ static	void	SendFireUp();
 
 static	void	decideWRF();
 
-static bool		SendColourRequest(UBYTE player, UBYTE col);
 static bool		SendFactionRequest(UBYTE player, UBYTE faction);
 static bool		SendPositionRequest(UBYTE player, UBYTE chosenPlayer);
 static bool		SendPlayerSlotTypeRequest(uint32_t player, bool isSpectator);
@@ -1055,10 +1058,7 @@ std::vector<JoinConnectionDescription> findLobbyGame(const std::string& lobbyAdd
 	return {JoinConnectionDescription(host, lobbyGame.hostPort)};
 }
 
-static JoinGameResult joinGameInternal(std::vector<JoinConnectionDescription> connection_list, std::shared_ptr<WzTitleUI> oldUI, bool asSpectator = false);
-static JoinGameResult joinGameInternalConnect(const char *host, uint32_t port, std::shared_ptr<WzTitleUI> oldUI, bool asSpectator = false);
-
-JoinGameResult joinGame(const char *connectionString, bool asSpectator /*= false*/)
+void joinGame(const char *connectionString, bool asSpectator /*= false*/)
 {
 	if (strchr(connectionString, '[') == NULL || strchr(connectionString, ']') == NULL) // it is not IPv6. For more see rfc3986 section-3.2.2
 	{
@@ -1069,115 +1069,21 @@ JoinGameResult joinGame(const char *connectionString, bool asSpectator /*= false
 			std::string serverIP = "";
 			serverIP.assign(connectionString, ddch - connectionString);
 			debug(LOG_INFO, "Connecting to ip [%s] port %d", serverIP.c_str(), serverPort);
-			return joinGame(serverIP.c_str(), serverPort, asSpectator);
+			joinGame(serverIP.c_str(), serverPort, asSpectator);
+			return;
 		}
 	}
-	return joinGame(connectionString, 0, asSpectator);
+	joinGame(connectionString, 0, asSpectator);
 }
 
-JoinGameResult joinGame(const char *host, uint32_t port, bool asSpectator /*= false*/)
+void joinGame(const char *host, uint32_t port, bool asSpectator /*= false*/)
 {
 	std::string hostStr = (host != nullptr) ? std::string(host) : std::string();
-	return joinGame(std::vector<JoinConnectionDescription>({JoinConnectionDescription(hostStr, port)}), asSpectator);
+	joinGame(std::vector<JoinConnectionDescription>({JoinConnectionDescription(hostStr, port)}), asSpectator);
 }
 
-JoinGameResult joinGame(const std::vector<JoinConnectionDescription>& connection_list, bool asSpectator /*= false*/) {
-	return joinGameInternal(connection_list, wzTitleUICurrent, asSpectator);
-}
-
-static JoinGameResult joinGameInternal(std::vector<JoinConnectionDescription> connection_list, std::shared_ptr<WzTitleUI> oldUI, bool asSpectator /*= false*/){
-
-	if (connection_list.size() > 1)
-	{
-		// sort the list, based on NETgetJoinPreferenceIPv6
-		// preserve the original relative order amongst each class of IPv4/IPv6 addresses
-		bool bSortIPv6First = NETgetJoinPreferenceIPv6();
-		std::stable_sort(connection_list.begin(), connection_list.end(), [bSortIPv6First](const JoinConnectionDescription& a, const JoinConnectionDescription& b) -> bool {
-			bool a_isIPv6 = a.host.find(":") != std::string::npos; // this is a very simplistic test - if the host contains ":" we treat it as IPv6
-			bool b_isIPv6 = b.host.find(":") != std::string::npos;
-			return (bSortIPv6First) ? (a_isIPv6 && !b_isIPv6) : (!a_isIPv6 && b_isIPv6);
-		});
-	}
-
-	for (const auto& connDesc : connection_list)
-	{
-		JoinGameResult result = joinGameInternalConnect(connDesc.host.c_str(), connDesc.port, oldUI, asSpectator);
-		switch (result)
-		{
-			case JoinGameResult::FAILED:
-				continue;
-			case JoinGameResult::PENDING_PASSWORD:
-				return result;
-			case JoinGameResult::JOINED:
-				ActivityManager::instance().joinGameSucceeded(connDesc.host.c_str(), connDesc.port);
-				return result;
-		}
-	}
-
-	// Failed to connect to all IPs / options in list
-	// Change to an error display.
-	changeTitleUI(std::make_shared<WzMsgBoxTitleUI>(WzString(_("Unable to join:")), WzString(_("Error while joining.")), wzTitleUICurrent));
-	ActivityManager::instance().joinGameFailed(connection_list);
-	return JoinGameResult::FAILED;
-}
-
-/**
- * Try connecting to the given host, show a password screen, the multiplayer screen or an error.
- * The reason for this having a third parameter is so that the password dialog
- *  doesn't turn into the parent of the next connection attempt.
- * Any other barriers/auth methods/whatever would presumably benefit in the same way.
- */
-static JoinGameResult joinGameInternalConnect(const char *host, uint32_t port, std::shared_ptr<WzTitleUI> oldUI, bool asSpectator /*= false*/)
-{
-	// oldUI may get captured for use in the password dialog, among other things.
-	PLAYERSTATS	playerStats;
-	loadMultiStats(sPlayer, &playerStats);
-
-	if (ingame.localJoiningInProgress)
-	{
-		return JoinGameResult::FAILED;
-	}
-
-	if (!NETjoinGame(host, port, (char *)sPlayer, playerStats.identity, asSpectator))	// join
-	{
-		switch (getLobbyError())
-		{
-		case ERROR_HOSTDROPPED:
-			setLobbyError(ERROR_NOERROR);
-			break;
-		case ERROR_WRONGPASSWORD:
-			{
-				std::string capturedHost = host;
-				changeTitleUI(std::make_shared<WzPassBoxTitleUI>([=](const char * pass) {
-					if (!pass) {
-						changeTitleUI(oldUI);
-					} else {
-						NETsetGamePassword(pass);
-						JoinConnectionDescription conn(capturedHost, port);
-						joinGameInternal({conn}, oldUI, asSpectator);
-					}
-				}));
-				return JoinGameResult::PENDING_PASSWORD;
-			}
-		default:
-			break;
-		}
-
-		return JoinGameResult::FAILED;
-	}
-	ingame.localJoiningInProgress	= true;
-
-	setMultiStats(selectedPlayer, playerStats, false);
-	setMultiStats(selectedPlayer, playerStats, true);
-
-	changeTitleUI(std::make_shared<WzMultiplayerOptionsTitleUI>(oldUI));
-
-	if (selectedPlayer < MAX_PLAYERS && war_getMPcolour() >= 0)
-	{
-		SendColourRequest(selectedPlayer, war_getMPcolour());
-	}
-
-	return JoinGameResult::JOINED;
+void joinGame(const std::vector<JoinConnectionDescription>& connection_list, bool asSpectator /*= false*/) {
+	startJoiningAttempt(sPlayer, connection_list, asSpectator);
 }
 
 // ////////////////////////////////////////////////////////////////////////////
@@ -1350,7 +1256,7 @@ static void addGameOptions()
 		psWidget->setGeometry(MULTIOP_OPTIONSX, MULTIOP_OPTIONSY, MULTIOP_OPTIONSW, MULTIOP_OPTIONSH);
 	}));
 
-	addSideText(FRONTEND_SIDETEXT3, MULTIOP_OPTIONSX - 3 , MULTIOP_OPTIONSY, _("OPTIONS"));
+	addSideText(FRONTEND_SIDETEXT3, MULTIOP_OPTIONSX - 6 , MULTIOP_OPTIONSY, _("OPTIONS"));
 
 	// game name box
 	if (NetPlay.bComms)
@@ -1779,32 +1685,39 @@ void WzMultiplayerOptionsTitleUI::openAiChooser(uint32_t player)
 		auto pStrongPtr = psWeakTitleUI.lock();
 		ASSERT_OR_RETURN(, pStrongPtr.operator bool(), "WzMultiplayerOptionsTitleUI no longer exists");
 
-		switch (clickedButton.id)
+		if (!NetPlay.players[player].allocated)
 		{
-		case MULTIOP_AI_CLOSED:
-			NetPlay.players[player].ai = AI_CLOSED;
-			NetPlay.players[player].isSpectator = false;
-			break;
-		case MULTIOP_AI_OPEN:
-			NetPlay.players[player].ai = AI_OPEN;
-			NetPlay.players[player].isSpectator = false;
-			break;
-		case MULTIOP_AI_SPECTATOR:
-			// set slot to open
-			NetPlay.players[player].ai = AI_OPEN;
-			// but also a spectator
-			NetPlay.players[player].isSpectator = true;
-			break;
-		default:
-			debug(LOG_ERROR, "Unexpected button id");
-			return;
-			break;
-		}
+			switch (clickedButton.id)
+			{
+			case MULTIOP_AI_CLOSED:
+				NetPlay.players[player].ai = AI_CLOSED;
+				NetPlay.players[player].isSpectator = false;
+				break;
+			case MULTIOP_AI_OPEN:
+				NetPlay.players[player].ai = AI_OPEN;
+				NetPlay.players[player].isSpectator = false;
+				break;
+			case MULTIOP_AI_SPECTATOR:
+				// set slot to open
+				NetPlay.players[player].ai = AI_OPEN;
+				// but also a spectator
+				NetPlay.players[player].isSpectator = true;
+				break;
+			default:
+				debug(LOG_ERROR, "Unexpected button id");
+				return;
+				break;
+			}
 
-		// common code
-		NetPlay.players[player].difficulty = AIDifficulty::DISABLED; // disable AI for this slot
-		NETBroadcastPlayerInfo(player);
-		resetReadyStatus(false);
+			// common code
+			NetPlay.players[player].difficulty = AIDifficulty::DISABLED; // disable AI for this slot
+			NETBroadcastPlayerInfo(player);
+			resetReadyStatus(false);
+		}
+		else
+		{
+			debug(LOG_INFO, "Player joined slot %d while chooser was open", player);
+		}
 		widgScheduleTask([pStrongPtr] {
 			pStrongPtr->closeAiChooser();
 			pStrongPtr->addPlayerBox(true);
@@ -1892,12 +1805,19 @@ void WzMultiplayerOptionsTitleUI::openAiChooser(uint32_t player)
 			pAIRow->addOnClickHandler([psWeakTitleUI, aiIdx, player](W_BUTTON& clickedButton) {
 				auto pStrongPtr = psWeakTitleUI.lock();
 				ASSERT_OR_RETURN(, pStrongPtr.operator bool(), "WzMultiplayerOptionsTitleUI no longer exists");
-				NetPlay.players[player].isSpectator = false;
-				NetPlay.players[player].ai = aiIdx;
-				setPlayerName(player, getAIName(player));
-				NetPlay.players[player].difficulty = AIDifficulty::MEDIUM;
-				NETBroadcastPlayerInfo(player);
-				resetReadyStatus(false);
+				if (!NetPlay.players[player].allocated)
+				{
+					NetPlay.players[player].isSpectator = false;
+					NetPlay.players[player].ai = aiIdx;
+					setPlayerName(player, getAIName(player));
+					NetPlay.players[player].difficulty = AIDifficulty::MEDIUM;
+					NETBroadcastPlayerInfo(player);
+					resetReadyStatus(false);
+				}
+				else
+				{
+					debug(LOG_INFO, "Player joined slot %d while chooser was open", player);
+				}
 				widgScheduleTask([pStrongPtr] {
 					pStrongPtr->closeAiChooser();
 					pStrongPtr->addPlayerBox(true);
@@ -2055,8 +1975,6 @@ public:
 		return WzPlayerIndexSwapPositionRow::make(switcherPlayerIdx, targetPlayerIdx, parent);
 	}
 };
-
-#include <set>
 
 static std::set<uint32_t> validPlayerIdxTargetsForPlayerPositionMove(uint32_t player)
 {
@@ -2324,7 +2242,7 @@ void WzMultiplayerOptionsTitleUI::openTeamChooser(uint32_t player)
 		const int imgheight_ban = iV_GetImageHeight(FrontImages, IMAGE_NOJOIN_FULL);
 		kickImageX = kickImageX - imgwidth - 4;
 		addMultiButWithClickHandler(psInlineChooserForm, MULTIOP_TEAMCHOOSER_BAN, kickImageX, 8, imgwidth_ban, imgheight_ban,
-			("Ban player"), IMAGE_NOJOIN_FULL, IMAGE_NOJOIN_FULL, IMAGE_NOJOIN_FULL, onClickHandler);
+			("Ban player"), IMAGE_NOJOIN_FULL, IMAGE_NOJOIN_FULL, IMAGE_NOJOIN_FULL, banOnClickHandler);
 	}
 
 	if (canChangeSpectatorStatus)
@@ -2775,7 +2693,7 @@ bool changeColour(unsigned player, int col, bool isHost)
 	return false;
 }
 
-static bool SendColourRequest(UBYTE player, UBYTE col)
+bool SendColourRequest(UBYTE player, UBYTE col)
 {
 	if (NetPlay.isHost)			// do or request the change
 	{
@@ -3270,7 +3188,6 @@ static SwapPlayerIndexesResult recvSwapPlayerIndexes(NETQUEUE queue, const std::
 			resetLobbyChangePlayerVote(playerIndex);
 		}
 	}
-	swapPlayerMultiStatsLocal(playerIndexA, playerIndexB);
 	std::swap(ingame.hostChatPermissions[playerIndexA], ingame.hostChatPermissions[playerIndexB]);
 	std::swap(ingame.muteChat[playerIndexA], ingame.muteChat[playerIndexB]);
 	multiSyncPlayerSwap(playerIndexA, playerIndexB);
@@ -3292,6 +3209,9 @@ static SwapPlayerIndexesResult recvSwapPlayerIndexes(NETQUEUE queue, const std::
 		selectedPlayer = newPlayerIndex;
 		realSelectedPlayer = selectedPlayer;
 		debug(LOG_NET, "NET_PLAYER_SWAP_INDEX received for me. Switching from player %" PRIu32 " to player %" PRIu32 "", oldPlayerIndex,newPlayerIndex);
+
+		// Must be called *after* we swap the selectedPlayer / realSelectedPlayer
+		swapPlayerMultiStatsLocal(playerIndexA, playerIndexB);
 
 		NetPlay.players[selectedPlayer].allocated = true;
 		setPlayerName(selectedPlayer, sPlayer);
@@ -3335,6 +3255,8 @@ static SwapPlayerIndexesResult recvSwapPlayerIndexes(NETQUEUE queue, const std::
 	}
 	else
 	{
+		swapPlayerMultiStatsLocal(playerIndexA, playerIndexB);
+
 		// TODO: display a textual description of the move
 		// just wait for the new player info to be broadcast by the host
 	}
@@ -4112,8 +4034,8 @@ public:
 			if (playerIdx == selectedPlayer || NetPlay.isHost)
 			{
 				uint32_t player = playerIdx;
-				// host can move any player, clients can request to move themselves
-				if ((player == selectedPlayer || (NetPlay.players[player].allocated && NetPlay.isHost))
+				// host can move any player, clients can request to move themselves if there are available slots
+				if (((player == selectedPlayer && validPlayerIdxTargetsForPlayerPositionMove(player).size() > 0) || (NetPlay.players[player].allocated && NetPlay.isHost))
 					&& !locked.position
 					&& player < MAX_PLAYERS
 					&& !isSpectatorOnlySlot(player))
@@ -5370,7 +5292,7 @@ void ChatBoxWidget::displayMessage(RoomMessage const &message)
 	{
 	case RoomMessageSystem:
 		paragraph->setFontColour(WZCOL_CONS_TEXT_SYSTEM);
-		paragraph->addText(message.text);
+		paragraph->addText(WzString::fromUtf8(message.text));
 		break;
 
 	case RoomMessagePlayer:
@@ -5378,7 +5300,7 @@ void ChatBoxWidget::displayMessage(RoomMessage const &message)
 		ASSERT(message.sender.get() != nullptr, "Null message sender?");
 		paragraph->setFont(font_small);
 		paragraph->setFontColour({0xc0, 0xc0, 0xc0, 0xff});
-		paragraph->addText(formatLocalDateTime("%H:%M", message.time));
+		paragraph->addText(WzString::fromUtf8(formatLocalDateTime("%H:%M", message.time)));
 
 		auto playerNameWidget = std::make_shared<ChatBoxPlayerNameWidget>(message.sender);
 		paragraph->addWidget(playerNameWidget, playerNameWidget->aboveBase());
@@ -5387,7 +5309,7 @@ void ChatBoxWidget::displayMessage(RoomMessage const &message)
 		paragraph->setShadeColour({0, 0, 0, 0});
 		bool specSender = (*message.sender)->isSpectator && !message.sender->isHost();
 		paragraph->setFontColour((!specSender) ? WZCOL_WHITE : WZCOL_TEXT_MEDIUM);
-		paragraph->addText(astringf(" %s", message.text.c_str()));
+		paragraph->addText(WzString::fromUtf8(astringf(" %s", message.text.c_str())));
 
 		break;
 	}
@@ -5395,7 +5317,7 @@ void ChatBoxWidget::displayMessage(RoomMessage const &message)
 	case RoomMessageNotify:
 	default:
 		paragraph->setFontColour(WZCOL_YELLOW);
-		paragraph->addText(message.text);
+		paragraph->addText(WzString::fromUtf8(message.text));
 		break;
 	}
 
@@ -5574,7 +5496,7 @@ static void addChatBox(bool preserveOldChat)
 	chatBox->setSendMode(desiredSendMode);
 	chatBox->initializeMessages(preserveOldChat);
 
-	addSideText(FRONTEND_SIDETEXT4, MULTIOP_CHATBOXX - 3, MULTIOP_CHATBOXY, _("CHAT"));
+	addSideText(FRONTEND_SIDETEXT4, MULTIOP_CHATBOXX - 6, MULTIOP_CHATBOXY, _("CHAT"));
 
 	if (!getModList().empty())
 	{
@@ -5673,6 +5595,7 @@ static void stopJoining(std::shared_ptr<WzTitleUI> parent)
 	}
 	debug(LOG_NET, "We have stopped joining.");
 	ActivityManager::instance().joinedLobbyQuit();
+	NETremRedirects();
 	changeTitleUI(parent);
 	selectedPlayer = 0;
 	realSelectedPlayer = 0;
@@ -6348,18 +6271,6 @@ void WzMultiplayerOptionsTitleUI::processMultiopWidgets(UDWORD id)
 		case MULTIOP_GNAME_ICON:
 			break;
 
-		case MULTIOP_MAP:
-			widgDelete(psWScreen, MULTIOP_PLAYERS);
-			widgDelete(psWScreen, FRONTEND_SIDETEXT2);  // del text too,
-
-			debug(LOG_WZ, "processMultiopWidgets[MULTIOP_MAP_ICON]: %s.wrf", MultiCustomMapsPath);
-			addMultiRequest(MultiCustomMapsPath, ".wrf", MULTIOP_MAP, 0, widgGetString(psWScreen, MULTIOP_MAP));
-
-			widgSetString(psWScreen, MULTIOP_MAP + 1 , game.map); //What a horrible hack! FIX ME! (See addBlueForm())
-			widgReveal(psWScreen, MULTIOP_MAP_MOD);
-			widgReveal(psWScreen, MULTIOP_MAP_RANDOM);
-			break;
-
 		case MULTIOP_MAP_ICON:
 			widgDelete(psWScreen, MULTIOP_PLAYERS);
 			widgDelete(psWScreen, FRONTEND_SIDETEXT2);					// del text too,
@@ -6783,7 +6694,7 @@ public:
 		addGameOptions(); //refresh to see the proper tech level in the map name
 		return true;
 	}
-	virtual bool kickPlayer(uint32_t player, const char *reason, bool ban) override
+	virtual bool kickPlayer(uint32_t player, const char *reason, bool ban, uint32_t requester) override
 	{
 		ASSERT_HOST_ONLY(return false);
 		ASSERT_OR_RETURN(false, player != NetPlay.hostPlayer, "Unable to kick the host");
@@ -7393,6 +7304,8 @@ void WzMultiplayerOptionsTitleUI::frontendMultiMessages(bool running)
 
 		NETpop(queue);
 	}
+
+	autoLagKickRoutine();
 }
 
 TITLECODE WzMultiplayerOptionsTitleUI::run()
@@ -7414,6 +7327,11 @@ TITLECODE WzMultiplayerOptionsTitleUI::run()
 		lastrefresh = gameTime;
 		if (!multiRequestUp && (NetPlay.isHost || ingame.localJoiningInProgress))
 		{
+			if (aiChooserUp >= 0 && NetPlay.players[aiChooserUp].allocated)
+			{
+				closeAiChooser(); // close ai chooser that's open for a slot which a player just joined into
+			}
+
 			addPlayerBox(true);				// update the player box.
 			loadMapPreview(false);
 		}
@@ -7632,7 +7550,7 @@ TITLECODE WzMultiplayerOptionsTitleUI::run()
 		cancelOrDismissNotificationIfTag([](const std::string& tag) {
 			return (tag.rfind(SLOTTYPE_TAG_PREFIX, 0) == 0);
 		});
-		changeTitleUI(std::make_shared<WzMsgBoxTitleUI>(WzString(_("Connection lost:")), WzString(_("The host has quit.")), parent));
+		stopJoining(std::make_shared<WzMsgBoxTitleUI>(WzString(_("Connection lost:")), WzString(_("The host has quit.")), parent));
 		pie_LoadBackDrop(SCREEN_RANDOMBDROP);
 	}
 
@@ -7676,28 +7594,26 @@ static void printHostHelpMessagesToConsole()
 	}
 	if (NetPlay.bComms)
 	{
-		if (NetPlay.isUPNP)
+		if (NetPlay.isPortMappingEnabled)
 		{
-			if (NetPlay.isUPNP_CONFIGURED)
+			if (!ipv4MappingRequest)
 			{
-				ssprintf(buf, "%s", _("UPnP has been enabled."));
+				return;
 			}
-			else
+			switch (PortMappingManager::instance().get_status(ipv4MappingRequest))
 			{
-				if (NetPlay.isUPNP_ERROR)
-				{
-					ssprintf(buf, "%s", _("UPnP detection failed. You must manually configure router yourself."));
-				}
-				else
-				{
-					ssprintf(buf, "%s", _("UPnP detection is in progress..."));
-				}
-			}
-			displayRoomNotifyMessage(buf);
+			// rely on callbacks / output in NETaddRedirects() for everything except pending
+			case PortMappingDiscoveryStatus::IN_PROGRESS:
+				ssprintf(buf, "%s", _("Port mapping creation is in progress..."));
+				displayRoomNotifyMessage(buf);
+				break;
+			default:
+				break;
+			};
 		}
 		else
 		{
-			ssprintf(buf, _("UPnP detection disabled by user. Autoconfig of port %d will not happen."), NETgetGameserverPort());
+			ssprintf(buf, _("Port mapping disabled by user. Autoconfig of port %d will not happen."), NETgetGameserverPort());
 			displayRoomNotifyMessage(buf);
 		}
 	}
@@ -8908,6 +8824,12 @@ bool WZGameReplayOptionsHandler::saveOptions(nlohmann::json& object) const
 	// Save `selectedPlayer` (even though we don't actually use it on restore - for now)
 	object["selectedPlayer"] = selectedPlayer;
 
+	// Save campaignName
+	object["campaignName"] = getCampaignName();
+
+	// Save tweakOptions
+	object["tweakOptions"] = getCamTweakOptions();
+
 	// ? Do not need to save alliances (?)
 
 	// Save `NetPlay.players` -- possibly recreate NetPlay.playerReferences on load?
@@ -9055,6 +8977,40 @@ bool WZGameReplayOptionsHandler::restoreOptions(const nlohmann::json& object, Em
 
 	// restore `ingame`
 	ingame = object.at("ingame").get<MULTIPLAYERINGAME>();
+
+	// restore `campaignName`
+	if (object.contains("campaignName"))
+	{
+		auto restoredCampaignName = object.at("campaignName").get<std::string>();
+		if (!restoredCampaignName.empty())
+		{
+			setCampaignName(restoredCampaignName);
+		}
+		else
+		{
+			clearCampaignName();
+		}
+	}
+	else
+	{
+		clearCampaignName();
+	}
+
+	// restore `tweakOptions`
+	if (object.contains("tweakOptions"))
+	{
+		auto tweakOptionsJSON = object.at("tweakOptions");
+		std::unordered_map<std::string, nlohmann::json> tweakOptionsJSONMap;
+		for (auto it : tweakOptionsJSON.items())
+		{
+			tweakOptionsJSONMap[it.key()] = it.value();
+		}
+		setCamTweakOptions(tweakOptionsJSONMap);
+	}
+	else
+	{
+		clearCamTweakOptions();
+	}
 
 	// ? Do not need to restore alliances (?)
 

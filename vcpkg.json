@@ -1,7 +1,7 @@
 {
 	"name": "warzone2100",
 	"version-string": "master-branch",
-	"builtin-baseline": "11e79b1072c7f12d84258b77948cda3b166aac59",
+	"builtin-baseline": "52be198ec91d771c22178ca1683cb5f077d6eecc",
 	"dependencies": [
 		"physfs",
 		"sdl2",
@@ -30,7 +30,7 @@
 			"platform": "emscripten"
 		},
 		{
-			"name": "gettext",
+			"name": "gettext-libintl",
 			"platform": "!emscripten"
 		},
 		{

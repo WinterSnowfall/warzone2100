@@ -59,6 +59,24 @@ static auto psMouseOverWidget = std::weak_ptr<WIDGET>();
 static auto psClickDownWidgetScreen = std::shared_ptr<W_SCREEN>();
 static auto psMouseOverWidgetScreen = std::shared_ptr<W_SCREEN>();
 
+struct WIDGET_KEYSTATE
+{
+public:
+	bool pressed = false;
+	W_CONTEXT dragStartPos = W_CONTEXT::ZeroContext();
+	W_CONTEXT dragLastPos = W_CONTEXT::ZeroContext();
+	std::shared_ptr<WIDGET> capturedDragWidget;
+public:
+	void reset()
+	{
+		pressed = false;
+		dragStartPos = W_CONTEXT::ZeroContext();
+		dragLastPos = W_CONTEXT::ZeroContext();
+		capturedDragWidget.reset();
+	}
+};
+static std::array<WIDGET_KEYSTATE, WKEY_SECONDARY + 1> widgetKeyCurrentState;
+
 static WIDGET_AUDIOCALLBACK AudioCallback = nullptr;
 static SWORD HilightAudioID = -1;
 static SWORD ClickedAudioID = -1;
@@ -154,6 +172,10 @@ void widgShutDown(void)
 {
 	psClickDownWidgetScreen = nullptr;
 	psMouseOverWidgetScreen = nullptr;
+	for (auto& state : widgetKeyCurrentState)
+	{
+		state.reset();
+	}
 	tipShutdown();
 	overlays.clear();
 	overlaySet.clear();
@@ -260,6 +282,13 @@ void widgRemoveOverlayScreen(const std::shared_ptr<W_SCREEN> &psScreen)
 	{
 		overlaysToDelete.insert(psScreen);
 	}
+}
+
+bool isRegisteredOverlayScreen(const std::shared_ptr<W_SCREEN> &psScreen)
+{
+	return std::any_of(overlays.begin(), overlays.end(), [psScreen](const OverlayScreen& overlay) -> bool {
+		return overlay.psScreen == psScreen;
+	});
 }
 
 static void cleanupDeletedOverlays()
@@ -1266,10 +1295,17 @@ bool WIDGET::processClickRecursive(W_CONTEXT *psContext, WIDGET_KEY key, bool wa
 	if (isMouseOverWidget())
 	{
 		auto psClickedWidget = shared_from_this();
+		W_CONTEXT clickedContext(psContext);
 		if (isTransparentToClicks)
 		{
 			do {
 				psClickedWidget = psClickedWidget->parent();
+				int shiftX = psClickedWidget->x();
+				int shiftY = psClickedWidget->y();
+				clickedContext.mx += shiftX;
+				clickedContext.my += shiftY;
+				clickedContext.xOffset -= shiftX;
+				clickedContext.yOffset -= shiftY;
 			} while (psClickedWidget != nullptr && psClickedWidget->isTransparentToClicks);
 			if (psClickedWidget == nullptr)
 			{
@@ -1278,12 +1314,17 @@ bool WIDGET::processClickRecursive(W_CONTEXT *psContext, WIDGET_KEY key, bool wa
 		}
 		if (wasPressed)
 		{
-			psClickedWidget->clicked(psContext, key);
+			psClickedWidget->clicked(&clickedContext, key);
 			psClickDownWidgetScreen = psClickedWidget->screenPointer.lock();
+			if (psClickedWidget->capturesMouseDrag(key))
+			{
+				widgetKeyCurrentState[key].capturedDragWidget = psClickedWidget;
+				widgetKeyCurrentState[key].dragLastPos = widgetKeyCurrentState[key].dragStartPos = clickedContext.convertToScreenContext();
+			}
 		}
 		else
 		{
-			psClickedWidget->released(psContext, key);
+			psClickedWidget->released(&clickedContext, key);
 			psClickDownWidgetScreen.reset();
 		}
 		didProcessClick = true;
@@ -1292,6 +1333,45 @@ bool WIDGET::processClickRecursive(W_CONTEXT *psContext, WIDGET_KEY key, bool wa
 	return didProcessClick;
 }
 
+void WIDGET::processMouseDragEvent(const W_CONTEXT &sContext, WIDGET_KEY wkey, WIDGET_KEYSTATE* pState, bool alsoTriggerReleased)
+{
+	bool dragPosChanged = !(pState->dragLastPos == sContext);
+	if (!dragPosChanged && !alsoTriggerReleased)
+	{
+		// no change since last event
+		return;
+	}
+
+	W_CONTEXT shiftedStartPos(pState->dragStartPos);
+	W_CONTEXT shiftedContext(sContext);
+	auto capturedWidgetParent = pState->capturedDragWidget->parent();
+	if (capturedWidgetParent)
+	{
+		auto parentScreenX = capturedWidgetParent->screenPosX();
+		auto parentScreenY = capturedWidgetParent->screenPosY();
+		shiftedStartPos.xOffset = parentScreenX;
+		shiftedStartPos.yOffset = parentScreenY;
+		shiftedStartPos.mx -= parentScreenX;
+		shiftedStartPos.my -= parentScreenY;
+		shiftedContext.xOffset = parentScreenX;
+		shiftedContext.yOffset = parentScreenY;
+		shiftedContext.mx -= parentScreenX;
+		shiftedContext.my -= parentScreenY;
+	}
+	if (dragPosChanged)
+	{
+		// Trigger a mouseDragged event for the widget
+		pState->capturedDragWidget->mouseDragged(wkey, &shiftedStartPos, &shiftedContext);
+		pState->dragLastPos = sContext;
+	}
+
+	if (alsoTriggerReleased)
+	{
+		// Trigger a released() call on the widget that captured the drag (to ensure it always gets one, even if the mouse was released off-widget)
+		pState->capturedDragWidget->released(&shiftedContext, wkey);
+		pState->capturedDragWidget.reset();
+	}
+}
 
 /* Execute a set of widgets for one cycle.
  * Returns a list of activated widgets.
@@ -1332,14 +1412,33 @@ WidgetTriggers const &widgRunScreen(const std::shared_ptr<W_SCREEN> &psScreen)
 			case MousePress::Release: pressed = false; break;
 			default: continue;
 			}
+
 			sContext.mx = c->pos.x;
 			sContext.my = c->pos.y;
 			bool didProcessClick = false;
-			forEachOverlayScreen([&sContext, &didProcessClick, wkey, pressed](const OverlayScreen& overlay) -> bool
+
+			if (!pressed || (pressed && widgetKeyCurrentState[wkey].capturedDragWidget != nullptr))
 			{
-				didProcessClick = overlay.psScreen->psForm->processClickRecursive(&sContext, wkey, pressed);
-				return !didProcessClick;
-			});
+				if (widgetKeyCurrentState[wkey].capturedDragWidget)
+				{
+					// Deliver a last mouseDragged event for the widget, with the final position sourced from this mousepress event, as well as a released event
+					WIDGET::processMouseDragEvent(sContext, wkey, &widgetKeyCurrentState[wkey], true);
+
+					// consume the release event - prevent it from going to another widget on top of which the mouse may have released
+					psClickDownWidgetScreen.reset();
+					didProcessClick = true;
+				}
+			}
+			widgetKeyCurrentState[wkey].pressed = pressed;
+
+			if (!didProcessClick)
+			{
+				forEachOverlayScreen([&sContext, &didProcessClick, wkey, pressed](const OverlayScreen& overlay) -> bool
+				{
+					didProcessClick = overlay.psScreen->psForm->processClickRecursive(&sContext, wkey, pressed);
+					return !didProcessClick;
+				});
+			}
 			if (!didProcessClick)
 			{
 				psScreen->psForm->processClickRecursive(&sContext, wkey, pressed);
@@ -1351,6 +1450,18 @@ WidgetTriggers const &widgRunScreen(const std::shared_ptr<W_SCREEN> &psScreen)
 
 	sContext.mx = mouseX();
 	sContext.my = mouseY();
+
+	// For each current key state
+	for (int key = WKEY_PRIMARY; key <= WKEY_SECONDARY; ++key)
+	{
+		// If widget_key is captured, and is down at the end of this batch of mouse events
+		if (widgetKeyCurrentState[key].pressed && widgetKeyCurrentState[key].capturedDragWidget)
+		{
+			// Trigger a mouseDragged event for the capture widget, with the final position (sourced from mouseX / mouseY)
+			WIDGET::processMouseDragEvent(sContext, static_cast<WIDGET_KEY>(key), &widgetKeyCurrentState[key], false);
+		}
+	}
+
 	bool didProcessClick = false;
 	forEachOverlayScreen([&sContext, &didProcessClick](const OverlayScreen& overlay) -> bool
 	{
@@ -1397,7 +1508,10 @@ void W_SCREEN::setReturn(const std::shared_ptr<WIDGET> &psWidget)
 
 void WIDGET::displayRecursive(WidgetGraphicsContext const &context)
 {
-	if (context.clipContains(geometry())) {
+	bool widgetIsClipped = !context.clipContains(geometry());
+
+	if (!widgetIsClipped)
+	{
 		if (debugBoundingBoxesOnly)
 		{
 			// Display bounding boxes.
@@ -1416,12 +1530,17 @@ void WIDGET::displayRecursive(WidgetGraphicsContext const &context)
 		}
 	}
 
+	if (widgetIsClipped && !context.allowChildDisplayRecursiveIfSelfClipped())
+	{
+		return;
+	}
+
 	if (type == WIDG_FORM && ((W_FORM *)this)->disableChildren)
 	{
 		return;
 	}
 
-	auto childrenContext = context.translatedBy(x(), y());
+	auto childrenContext = context.translatedBy(x(), y()).setAllowChildDisplayRecursiveIfSelfClipped(false);
 
 	// If this is a clickable form, the widgets on it have to move when it's down.
 	if (type == WIDG_FORM && (((W_FORM *)this)->style & WFORM_NOCLICKMOVE) == 0)
@@ -1592,6 +1711,14 @@ WidgetGraphicsContext WidgetGraphicsContext::clippedBy(WzRect const &newRect) co
 
 	newContext.clipped = true;
 
+	return newContext;
+}
+
+WidgetGraphicsContext WidgetGraphicsContext::setAllowChildDisplayRecursiveIfSelfClipped(bool val) const
+{
+	WidgetGraphicsContext newContext(*this);
+
+	newContext.allowChildDisplayIfSelfClipped = true;
 	return newContext;
 }
 

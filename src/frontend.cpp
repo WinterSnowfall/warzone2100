@@ -76,6 +76,7 @@
 #include "warzoneconfig.h"
 #include "wrappers.h"
 #include "titleui/titleui.h"
+#include "titleui/campaign.h"
 #include "urlhelpers.h"
 #include "game.h"
 #include "map.h" //for builtInMap and useTerrainOverrides
@@ -105,7 +106,6 @@ static std::shared_ptr<IMAGEFILE> pFlagsImages;
 // ////////////////////////////////////////////////////////////////////////////
 // Forward definitions
 
-static W_BUTTON * addSmallTextButton(UDWORD id, UDWORD PosX, UDWORD PosY, const char *txt, unsigned int style);
 static std::shared_ptr<W_BUTTON> makeTextButton(UDWORD id, const std::string &txt, unsigned int style, optional<unsigned int> minimumWidth = nullopt);
 static std::shared_ptr<W_SLIDER> makeFESlider(UDWORD id, UDWORD parent, UDWORD stops, UDWORD pos);
 static std::shared_ptr<WIDGET> addMargin(std::shared_ptr<WIDGET> widget);
@@ -182,7 +182,7 @@ static void runchatlink()
 
 const char * VIDEO_TAG = "videoMissing";
 
-static void notifyAboutMissingVideos()
+void notifyAboutMissingVideos()
 {
 	if (!hasNotificationsWithTag(VIDEO_TAG))
 	{
@@ -260,7 +260,6 @@ void runContinue()
 	SPinit(lastSaveMP ? LEVEL_TYPE::SKIRMISH : LEVEL_TYPE::CAMPAIGN);
 	sstrcpy(saveGameName, lastSavePath.toPath(SaveGamePath_t::Extension::GAM).c_str());
 	bMultiPlayer = lastSaveMP;
-	setCampaignNumber(getCampaign(saveGameName));
 }
 
 bool runTitleMenu()
@@ -399,69 +398,6 @@ void startSinglePlayerMenu()
 	}
 }
 
-void startCampaignSelector()
-{
-	addBackdrop();
-	addTopForm(false);
-	addBottomForm();
-
-	std::vector<CAMPAIGN_FILE> list = readCampaignFiles();
-	ASSERT(list.size() <= static_cast<size_t>(std::numeric_limits<UDWORD>::max()), "list.size() (%zu) exceeds UDWORD max", list.size());
-	for (UDWORD i = 0; i < static_cast<UDWORD>(list.size()); i++)
-	{
-		addTextButton(FRONTEND_CAMPAIGN_1 + i, FRONTEND_POS1X, FRONTEND_POS2Y + FRONTEND_BUTHEIGHT * i, gettext(list[i].name.toUtf8().c_str()), WBUT_TXTCENTRE);
-	}
-	addSideText(FRONTEND_SIDETEXT, FRONTEND_SIDEX, FRONTEND_SIDEY, _("CAMPAIGNS"));
-	addMultiBut(psWScreen, FRONTEND_BOTFORM, FRONTEND_QUIT, 10, 10, 30, 29, P_("menu", "Return"), IMAGE_RETURN, IMAGE_RETURN_HI, IMAGE_RETURN_HI);
-	// show this only when the video sequences are not installed
-	if (!seq_hasVideos())
-	{
-		addSmallTextButton(FRONTEND_HYPERLINK, FRONTEND_POS9X, FRONTEND_POS9Y, _("Campaign videos are missing! Get them from http://wz2100.net"), 0);
-		notifyAboutMissingVideos();
-	}
-}
-
-static void frontEndNewGame(int which)
-{
-	std::vector<CAMPAIGN_FILE> list = readCampaignFiles();
-	sstrcpy(aLevelName, list[which].level.toUtf8().c_str());
-	// show this only when the video sequences are installed
-	if (seq_hasVideos())
-	{
-		if (!list[which].video.isEmpty())
-		{
-			seq_ClearSeqList();
-			seq_AddSeqToList(list[which].video.toUtf8().c_str(), nullptr, list[which].captions.toUtf8().c_str(), false);
-			seq_StartNextFullScreenVideo();
-		}
-	}
-	if (!list[which].package.isEmpty())
-	{
-		WzString path;
-		path += PHYSFS_getWriteDir();
-		path += PHYSFS_getDirSeparator();
-		path += "campaigns";
-		path += PHYSFS_getDirSeparator();
-		path += list[which].package;
-		if (!PHYSFS_mount(path.toUtf8().c_str(), NULL, PHYSFS_APPEND))
-		{
-			debug(LOG_ERROR, "Failed to load campaign mod \"%s\": %s",
-			      path.toUtf8().c_str(), WZ_PHYSFS_getLastError());
-		}
-	}
-	if (!list[which].loading.isEmpty())
-	{
-		debug(LOG_WZ, "Adding campaign mod level \"%s\"", list[which].loading.toUtf8().c_str());
-		if (!loadLevFile(list[which].loading.toUtf8(), mod_campaign, false, nullptr))
-		{
-			debug(LOG_ERROR, "Failed to load %s", list[which].loading.toUtf8().c_str());
-			return;
-		}
-	}
-	debug(LOG_WZ, "Loading campaign mod -- %s", aLevelName);
-	changeTitleMode(STARTGAME);
-}
-
 static void loadOK()
 {
 	if (strlen(sRequestResult))
@@ -497,34 +433,6 @@ void SPinit(LEVEL_TYPE gameType)
 	useTerrainOverrides = true;
 }
 
-bool runCampaignSelector()
-{
-	WidgetTriggers const &triggers = widgRunScreen(psWScreen);
-	unsigned id = triggers.empty() ? 0 : triggers.front().widget->id; // Just use first click here, since the next click could be on another menu.
-	if (id == FRONTEND_QUIT)
-	{
-		changeTitleMode(SINGLE); // go back
-	}
-	else if (id >= FRONTEND_CAMPAIGN_1 && id <= FRONTEND_CAMPAIGN_6) // chose a campaign
-	{
-		SPinit(LEVEL_TYPE::CAMPAIGN);
-		frontEndNewGame(id - FRONTEND_CAMPAIGN_1);
-	}
-	else if (id == FRONTEND_HYPERLINK)
-	{
-		runHyperlink();
-	}
-
-	widgDisplayScreen(psWScreen); // show the widgets currently running
-
-	if (CancelPressed())
-	{
-		changeTitleMode(SINGLE);
-	}
-
-	return true;
-}
-
 bool runSinglePlayerMenu()
 {
 	if (bLoadSaveUp)
@@ -546,7 +454,8 @@ bool runSinglePlayerMenu()
 		switch (id)
 		{
 		case FRONTEND_NEWGAME:
-			changeTitleMode(CAMPAIGNS);
+			ActivityManager::instance().navigateToMenu("Campaign");
+			changeTitleUI(std::make_shared<WzCampaignSelectorTitleUI>(wzTitleUICurrent));
 			break;
 
 		case FRONTEND_LOADGAME_MISSION:
@@ -621,7 +530,7 @@ bool runSinglePlayerMenu()
 void startMultiPlayerMenu()
 {
 	closeMissingVideosNotification();
-	
+
 	addBackdrop();
 	addTopForm(false);
 	addBottomForm();
@@ -661,13 +570,11 @@ bool runMultiPlayerMenu()
 		case FRONTEND_HOST:
 			// don't pretend we are running a network game. Really do it!
 			NetPlay.bComms = true; // use network = true
-			NetPlay.isUPNP_CONFIGURED = false;
-			NetPlay.isUPNP_ERROR = false;
 			ingame.side = InGameSide::HOST_OR_SINGLEPLAYER;
 			bMultiPlayer = true;
 			bMultiMessages = true;
 			NETinit(true);
-			NETdiscoverUPnPDevices();
+			NETinitPortMapping();
 			game.type = LEVEL_TYPE::SKIRMISH;		// needed?
 			changeTitleUI(std::make_shared<WzMultiplayerOptionsTitleUI>(wzTitleUICurrent));
 			break;
@@ -1300,8 +1207,22 @@ bool runGraphicsOptionsMenu()
 	case FRONTEND_LIGHTS:
 	case FRONTEND_LIGHTS_R:
 	{
-		war_setPointLightPerPixelLighting(!war_getPointLightPerPixelLighting());
-		widgSetString(psWScreen, FRONTEND_LIGHTS_R, graphicsOptionsLightingString());
+		bool newValue = !war_getPointLightPerPixelLighting();
+		if (getTerrainShaderQuality() != TerrainShaderQuality::NORMAL_MAPPING)
+		{
+			newValue = false; // point light per pixel lighting is only supported in normal_mapping mode
+		}
+		auto shadowConstants = gfx_api::context::get().getShadowConstants();
+		shadowConstants.isPointLightPerPixelEnabled = newValue;
+		if (gfx_api::context::get().setShadowConstants(shadowConstants))
+		{
+			war_setPointLightPerPixelLighting(newValue);
+			widgSetString(psWScreen, FRONTEND_LIGHTS_R, graphicsOptionsLightingString());
+		}
+		else
+		{
+			debug(LOG_ERROR, "Failed to set per pixel point lighting value: %d", (int)newValue);
+		}
 		break;
 	}
 	case FRONTEND_FOG:
@@ -3362,9 +3283,9 @@ static std::shared_ptr<WIDGET> makePlayerLeaveModeMPDropdown()
 	return Margin(0, -paddingSize).wrap(dropdown);
 }
 
-char const *multiplayOptionsUPnPString()
+char const *multiplayOptionsPortMappingString()
 {
-	return NetPlay.isUPNP ? _("On") : _("Off");
+	return NetPlay.isPortMappingEnabled ? _("On") : _("Off");
 }
 
 char const *multiplayOptionsHostingChatDefaultString()
@@ -3394,9 +3315,11 @@ void startMultiplayOptionsMenu()
 	grid->place({1, 1, false}, row, addMargin(makeTextButton(FRONTEND_GAME_PORT_R, std::to_string(NETgetGameserverPort()), WBUT_DISABLE))); // FUTURE TODO: Make this an input field or similar and allow editing (although reject ports <= 1024)
 	row.start++;
 
-	// Enable UPnP
-	grid->place({0}, row, addMargin(makeTextButton(FRONTEND_UPNP, _("Enable UPnP"), WBUT_SECONDARY)));
-	grid->place({1, 1, false}, row, addMargin(makeTextButton(FRONTEND_UPNP_R, multiplayOptionsUPnPString(), WBUT_SECONDARY)));
+	// Port Mapping
+	auto portMappingTitle = makeTextButton(FRONTEND_PORT_MAPPING, _("Port Mapping"), WBUT_SECONDARY);
+	portMappingTitle->setTip(_("Use PCP, NAT-PMP, or UPnP to help configure your router / firewall to allow connections while hosting."));
+	grid->place({0}, row, addMargin(portMappingTitle));
+	grid->place({1, 1, false}, row, addMargin(makeTextButton(FRONTEND_PORT_MAPPING_R, multiplayOptionsPortMappingString(), WBUT_SECONDARY)));
 	row.start++;
 
 	// Chat
@@ -3464,10 +3387,10 @@ bool runMultiplayOptionsMenu()
 
 	switch (id)
 	{
-	case FRONTEND_UPNP:
-	case FRONTEND_UPNP_R:
-		NetPlay.isUPNP = !NetPlay.isUPNP;
-		widgSetString(psWScreen, FRONTEND_UPNP_R, multiplayOptionsUPnPString());
+	case FRONTEND_PORT_MAPPING:
+	case FRONTEND_PORT_MAPPING_R:
+		NetPlay.isPortMappingEnabled = !NetPlay.isPortMappingEnabled;
+		widgSetString(psWScreen, FRONTEND_PORT_MAPPING_R, multiplayOptionsPortMappingString());
 		break;
 	case FRONTEND_HOST_CHATDEFAULT:
 	case FRONTEND_HOST_CHATDEFAULT_R:
@@ -3908,7 +3831,7 @@ static std::shared_ptr<WIDGET> addMargin(std::shared_ptr<WIDGET> widget)
 	return Margin(0, 20).wrap(widget);
 }
 
-void addTextButton(UDWORD id,  UDWORD PosX, UDWORD PosY, const std::string &txt, unsigned int style)
+std::shared_ptr<W_BUTTON> addTextButton(UDWORD id,  UDWORD PosX, UDWORD PosY, const std::string &txt, unsigned int style)
 {
 	auto button = makeTextButton(id, txt, style);
 	if (style & WBUT_TXTCENTRE)
@@ -3923,6 +3846,7 @@ void addTextButton(UDWORD id,  UDWORD PosX, UDWORD PosY, const std::string &txt,
 	WIDGET *parent = widgGetFromID(psWScreen, FRONTEND_BOTFORM);
 	ASSERT(parent != nullptr, "Unable to find FRONTEND_BOTFORM?");
 	parent->attach(button);
+	return button;
 }
 
 W_BUTTON * addSmallTextButton(UDWORD id,  UDWORD PosX, UDWORD PosY, const char *txt, unsigned int style)

@@ -48,6 +48,7 @@
 #include "warcam.h"
 #include "display.h"
 #include "mission.h"
+#include "campaigninfo.h"
 #include "multiplay.h"
 #include "intdisplay.h"
 #include "texture.h"
@@ -79,13 +80,14 @@ public:
 	RadarWidget();
 
 protected:
-	void run(W_CONTEXT *) override;
 	void display(int xOffset, int yOffset) override;
 	bool hitTest(int x, int y) const override;
 	void clicked(W_CONTEXT *, WIDGET_KEY = WKEY_PRIMARY) override;
 	void released(W_CONTEXT *, WIDGET_KEY = WKEY_PRIMARY) override;
 	void highlight(W_CONTEXT *) override;
 	void highlightLost() override;
+	bool capturesMouseDrag(WIDGET_KEY) override;
+	void mouseDragged(WIDGET_KEY, W_CONTEXT *start, W_CONTEXT *current) override;
 
 public:
 	bool hasHighlight() const { return m_hasHighlight; }
@@ -246,7 +248,10 @@ bool InitRadar()
 	colRadarAlly = WZCOL_YELLOW;
 	colRadarEnemy = WZCOL_RED;
 	colRadarMe = WZCOL_WHITE;
-	pRadarWidget = std::make_shared<RadarWidget>();
+	if (!pRadarWidget)
+	{
+		pRadarWidget = std::make_shared<RadarWidget>();
+	}
 	return true;
 }
 
@@ -285,8 +290,11 @@ bool ShutdownRadar()
 	free(radarOverlayBuffer);
 	radarOverlayBuffer = nullptr;
 	frameSkip = 0;
-	psWScreen->psForm->detach(pRadarWidget);
-	pRadarWidget.reset();
+	if (pRadarWidget)
+	{
+		psWScreen->psForm->detach(pRadarWidget);
+		pRadarWidget.reset();
+	}
 	return true;
 }
 
@@ -831,41 +839,46 @@ RadarWidget::RadarWidget()
 
 #define WKEY_ORDER (getRightClickOrders()?WKEY_SECONDARY:WKEY_PRIMARY)
 #define WKEY_SELECT (getRightClickOrders()?WKEY_PRIMARY:WKEY_SECONDARY)
-#define MOUSE_SELECT (getRightClickOrders()?MOUSE_LMB:MOUSE_RMB)
 
-void RadarWidget::run(W_CONTEXT *)
+/* How far the mouse has to move to start a drag */
+#define DRAG_THRESHOLD	5
+
+bool RadarWidget::capturesMouseDrag(WIDGET_KEY wkey)
 {
-	int PosX, PosY;
-	UDWORD	temp1, temp2;
+	return (wkey == WKEY_SELECT);
+}
 
-	if (m_hasHighlight)
+void RadarWidget::mouseDragged(WIDGET_KEY wkey, W_CONTEXT *psStartContext, W_CONTEXT *psContext)
+{
+	if (wkey != WKEY_SELECT)
 	{
-		// process drag events
-		if (mouseDrag(MOUSE_SELECT, &temp1, &temp2))
+		return;
+	}
+
+	if (!getRotActive())
+	{
+		if (!m_handlingDrag)
 		{
-			if (!getRotActive())
+			if (ABSDIF(psStartContext->mx, psContext->mx) > DRAG_THRESHOLD ||
+				ABSDIF(psStartContext->my, psContext->my) > DRAG_THRESHOLD)
 			{
-				int x = mouseX();
-				int y = mouseY();
-				CalcRadarPosition(x, y, &PosX, &PosY);
-				setViewPos(PosX, PosY, true);
+				// start processing as drag
 				m_handlingDrag = true;
-				if (ctrlShiftDown())
-				{
-					playerPos.r.y = 0;
-				}
 			}
 		}
-		else
+
+		if (m_handlingDrag)
 		{
-			m_handlingDrag = false;
-		}
-	}
-	else
-	{
-		if (m_handlingDrag && !mouseDrag(MOUSE_SELECT, &temp1, &temp2))
-		{
-			m_handlingDrag = false;
+			W_CONTEXT screenContext = psContext->convertToScreenContext();
+			int x = screenContext.mx;
+			int y = screenContext.my;
+			int PosX, PosY;
+			CalcRadarPosition(x, y, &PosX, &PosY);
+			setViewPos(PosX, PosY, true);
+			if (ctrlShiftDown())
+			{
+				playerPos.r.y = 0;
+			}
 		}
 	}
 }
@@ -957,6 +970,7 @@ void RadarWidget::released(W_CONTEXT *context, WIDGET_KEY key)
 	}
 
 	m_clickPosition[key].reset();
+	m_handlingDrag = false;
 }
 
 bool isMouseOverRadar()
