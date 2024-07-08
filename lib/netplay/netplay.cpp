@@ -174,17 +174,25 @@ public:
 		identitiesMovedToSpectatorsByHost.clear();
 		ipsMovedToSpectatorsByHost.clear();
 	}
+	// player to spectators
+	void movedPlayerToSpectators(const std::string& ipAddress, const EcKey::Key& publicIdentity, bool byHost)
+	{
+		if (!byHost) { return; }
+		ipsMovedToSpectatorsByHost.insert(ipAddress);
+		identitiesMovedToSpectatorsByHost.insert(base64Encode(publicIdentity));
+	}
 	void movedPlayerToSpectators(const PLAYER& player, const EcKey::Key& publicIdentity, bool byHost)
 	{
 		if (!byHost) { return; }
 		ipsMovedToSpectatorsByHost.insert(player.IPtextAddress);
 		identitiesMovedToSpectatorsByHost.insert(base64Encode(publicIdentity));
 	}
+	// spectator to players
 	void movedSpectatorToPlayers(const std::string& ipAddress, const EcKey::Key& publicIdentity, bool byHost)
 	{
 		if (!byHost) { return; }
-		ipsMovedToSpectatorsByHost.insert(ipAddress);
-		identitiesMovedToSpectatorsByHost.insert(base64Encode(publicIdentity));
+		ipsMovedToSpectatorsByHost.erase(ipAddress);
+		identitiesMovedToSpectatorsByHost.erase(base64Encode(publicIdentity));
 	}
 	void movedSpectatorToPlayers(const PLAYER& player, const EcKey::Key& publicIdentity, bool byHost)
 	{
@@ -840,8 +848,8 @@ static optional<uint32_t> NET_CreatePlayer(char const *name, bool forceTakeLowes
 	optional<uint32_t> index = NET_FindOpenSlotForPlayer(forceTakeLowestAvailablePlayerNumber, asSpectator);
 	if (!index.has_value())
 	{
-		debug(LOG_ERROR, "Could not find place for player %s", name);
-		NETlogEntry("Could not find a place for player!", SYNC_FLAG, -1);
+		debug(LOG_INFO, "Could not find place for %s %s", (!asSpectator.value_or(false)) ? "player" : "spectator", name);
+		NETlogEntry((!asSpectator.value_or(false)) ? "Could not find a place for player!" : "Could not find a place for spectator!", SYNC_FLAG, -1);
 		return nullopt;
 	}
 
@@ -2078,6 +2086,17 @@ bool NETmovePlayerToSpectatorOnlySlot(uint32_t playerIdx, bool hostOverride /*= 
 
 	playerManagementRecord.movedPlayerToSpectators(NetPlay.players[availableSpectatorIndex.value()], playerPublicKeyIdentity, hostOverride);
 
+	if (wz_command_interface_enabled())
+	{
+		uint32_t newSpecIdx = availableSpectatorIndex.value();
+		std::string playerPublicKeyB64 = base64Encode(getMultiStats(newSpecIdx).identity.toBytes(EcKey::Public));
+		std::string playerIdentityHash = getMultiStats(newSpecIdx).identity.publicHashString();
+		std::string playerVerifiedStatus = (ingame.VerifiedIdentity[newSpecIdx]) ? "V" : "?";
+		std::string playerName = NetPlay.players[newSpecIdx].name;
+		std::string playerNameB64 = base64Encode(std::vector<unsigned char>(playerName.begin(), playerName.end()));
+		wz_command_interface_output("WZEVENT: movedPlayerToSpec: %" PRIu32 " -> %" PRIu32 " %s %s %s %s %s\n", playerIdx, newSpecIdx, playerPublicKeyB64.c_str(), playerIdentityHash.c_str(), playerVerifiedStatus.c_str(), playerNameB64.c_str(), NetPlay.players[newSpecIdx].IPtextAddress);
+	}
+
 	// Broadcast the swapped player info
 	NETBroadcastTwoPlayerInfo(playerIdx, availableSpectatorIndex.value());
 
@@ -2127,6 +2146,16 @@ SpectatorToPlayerMoveResult NETmoveSpectatorToPlayerSlot(uint32_t playerIdx, opt
 	ASSERT(!NetPlay.players[newPlayerIdx.value()].isSpectator, "New slot should not be a spectator??");
 
 	playerManagementRecord.movedSpectatorToPlayers(NetPlay.players[newPlayerIdx.value()], spectatorPublicKeyIdentity, hostOverride);
+
+	if (wz_command_interface_enabled())
+	{
+		std::string playerPublicKeyB64 = base64Encode(getMultiStats(newPlayerIdx.value()).identity.toBytes(EcKey::Public));
+		std::string playerIdentityHash = getMultiStats(newPlayerIdx.value()).identity.publicHashString();
+		std::string playerVerifiedStatus = (ingame.VerifiedIdentity[newPlayerIdx.value()]) ? "V" : "?";
+		std::string playerName = NetPlay.players[newPlayerIdx.value()].name;
+		std::string playerNameB64 = base64Encode(std::vector<unsigned char>(playerName.begin(), playerName.end()));
+		wz_command_interface_output("WZEVENT: movedSpecToPlayer: %" PRIu32 " -> %" PRIu32 " %s %s %s %s %s\n", playerIdx, newPlayerIdx.value(), playerPublicKeyB64.c_str(), playerIdentityHash.c_str(), playerVerifiedStatus.c_str(), playerNameB64.c_str(), NetPlay.players[newPlayerIdx.value()].IPtextAddress);
+	}
 
 	// Broadcast the swapped player info
 	NETBroadcastTwoPlayerInfo(playerIdx, newPlayerIdx.value());
@@ -3907,7 +3936,7 @@ static void NETallowJoining()
 					}
 					else
 					{
-						debug(LOG_ERROR, "Received an invalid version \"%" PRIu32 ".%" PRIu32 "\".", major, minor);
+						debug(LOG_INFO, "Received an invalid version \"%" PRIu32 ".%" PRIu32 "\".", major, minor);
 						result = htonl(ERROR_WRONGVERSION);
 						memcpy(&tmp_connectState[i].buffer, &result, sizeof(result));
 						writeAll(*tmp_socket[i], &tmp_connectState[i].buffer, sizeof(result));
@@ -4016,7 +4045,9 @@ static void NETallowJoining()
 					// verify signature that player is joining with, reject him if he can not do that
 					if (!identity.fromBytes(pkey, EcKey::Public) || !identity.verify(challengeResponse, tmp_connectState[i].connectChallenge.data(), tmp_connectState[i].connectChallenge.size()))
 					{
-						debug(LOG_ERROR, "freeing temp socket %p, couldn't create player!", static_cast<void *>(tmp_socket[i]));
+						auto rejectMsg = astringf("**Rejecting player(%s), failed to verify player identity.", tmp_connectState[i].ip.c_str());
+						debug(LOG_INFO, "%s", rejectMsg.c_str());
+						debug(LOG_NET, "freeing temp socket %p, couldn't verify player identity", static_cast<void *>(tmp_socket[i]));
 
 						rejected = ERROR_WRONGDATA;
 						NETbeginEncode(NETnetTmpQueue(i), NET_REJECTED);
@@ -4078,7 +4109,7 @@ static void NETallowJoining()
 					if (rejected)
 					{
 						char buf[256] = {'\0'};
-						ssprintf(buf, "**Rejecting player(%s), reason (%u). ", tmp_connectState[i].ip.c_str(), (unsigned int) rejected);
+						ssprintf(buf, "**Rejecting player(%s), reason (%u).", tmp_connectState[i].ip.c_str(), (unsigned int) rejected);
 						debug(LOG_INFO, "%s", buf);
 						NETlogEntry(buf, SYNC_FLAG, i);
 						NETbeginEncode(NETnetTmpQueue(i), NET_REJECTED);
@@ -4161,7 +4192,7 @@ static void NETallowJoining()
 						// change the player join request to spectators
 						tmp_connectState[i].receivedJoinInfo.playerType = NET_JOIN_SPECTATOR;
 						// enforce spectator state for this player
-						playerManagementRecord.movedSpectatorToPlayers(tmp_connectState[i].ip, tmp_connectState[i].receivedJoinInfo.identity.toBytes(EcKey::Privacy::Public), true);
+						playerManagementRecord.movedPlayerToSpectators(tmp_connectState[i].ip, tmp_connectState[i].receivedJoinInfo.identity.toBytes(EcKey::Privacy::Public), true);
 					}
 					else if (tmp_connectState[i].asyncJoinApprovalResult.value() == AsyncJoinApprovalAction::Approve)
 					{
@@ -4236,7 +4267,7 @@ static void NETallowJoining()
 			if (!tmp.has_value() || tmp.value() > static_cast<uint32_t>(std::numeric_limits<uint8_t>::max()))
 			{
 				ASSERT(tmp.value_or(0) <= static_cast<uint32_t>(std::numeric_limits<uint8_t>::max()), "Currently limited to uint8_t");
-				debug(LOG_ERROR, "freeing temp socket %p, couldn't create player!", static_cast<void *>(tmp_socket[i]));
+				debug(LOG_INFO, "freeing temp socket %p, couldn't create slot", static_cast<void *>(tmp_socket[i]));
 
 				// Tell the player that we are full.
 				rejected = ERROR_FULL;
@@ -4280,7 +4311,7 @@ static void NETallowJoining()
 
 			std::string joinerPublicKeyB64 = base64Encode(joinRequestInfo.identity.toBytes(EcKey::Public));
 			std::string joinerIdentityHash = joinRequestInfo.identity.publicHashString();
-			wz_command_interface_output("WZEVENT: player join: %u %s %s %s\n", i, joinerPublicKeyB64.c_str(), joinerIdentityHash.c_str(), NetPlay.players[i].IPtextAddress);
+			wz_command_interface_output("WZEVENT: player join: %u %s %s %s\n", index, joinerPublicKeyB64.c_str(), joinerIdentityHash.c_str(), NetPlay.players[index].IPtextAddress);
 
 			// Narrowcast to new player that everyone has joined.
 			for (uint8_t j = 0; j < MAX_CONNECTED_PLAYERS; ++j)

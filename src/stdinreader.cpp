@@ -755,7 +755,7 @@ int cmdInputThreadFunc(void *)
 					bool foundActivePlayer = kickActivePlayerWithIdentity(playerIdentityStrCopy, kickReasonStrCopy, false);
 					if (!foundActivePlayer)
 					{
-						wz_command_interface_output("WZCMD error: Failed to find currently-connected player with matching public key or hash?\n");
+						wz_command_interface_output("WZCMD info: kick identity %s: failed to find currently-connected player with matching public key or hash\n", playerIdentityStrCopy.c_str());
 					}
 				});
 			}
@@ -841,11 +841,12 @@ int cmdInputThreadFunc(void *)
 					continue;
 				}
 				std::string playerIdentityStrCopy(playeridentitystring);
-				wzAsyncExecOnMainThread([playerIdentityStrCopy, freeChatEnabled] {
+				std::string chatLevelStrCopy(chatlevel);
+				wzAsyncExecOnMainThread([playerIdentityStrCopy, chatLevelStrCopy, freeChatEnabled] {
 					bool foundActivePlayer = changeHostChatPermissionsForActivePlayerWithIdentity(playerIdentityStrCopy, freeChatEnabled);
 					if (!foundActivePlayer)
 					{
-						wz_command_interface_output("WZCMD error: Failed to find currently-connected player with matching public key or hash?\n");
+						wz_command_interface_output("WZCMD info: set chat %s %s: failed to find currently-connected player with matching public key or hash\n", chatLevelStrCopy.c_str(), playerIdentityStrCopy.c_str());
 					}
 				});
 			}
@@ -997,7 +998,7 @@ int cmdInputThreadFunc(void *)
 					}
 					if (!foundActivePlayer)
 					{
-						wz_command_interface_output("WZCMD error: Failed to find currently-connected player with matching public key or hash?\n");
+						wz_command_interface_output("WZCMD info: chat direct %s: failed to find currently-connected player with matching public key or hash\n", playerIdentityStrCopy.c_str());
 					}
 				});
 			}
@@ -1046,6 +1047,19 @@ int cmdInputThreadFunc(void *)
 					wz_command_interface_output_onmainthread("WZCMD error: Invalid action or rejectionReason passed to join approve/reject command\n");
 				}
 			}
+		}
+		else if(!strncmpl(line, "autobalance"))
+		{
+			wzAsyncExecOnMainThread([] {
+				if (autoBalancePlayersCmd())
+				{
+					wz_command_interface_output("WZCMD info: autobalanced players\n");
+				}
+				else
+				{
+					wz_command_interface_output("WZCMD error: autobalance failed\n");
+				}
+			});
 		}
 		else if(!strncmpl(line, "shutdown now"))
 		{
