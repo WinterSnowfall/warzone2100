@@ -16,13 +16,13 @@ on:
       # Linux-specific example scripts
       - 'doc/hosting/linux_scripts/**'
   # Support running after "Draft Tag Release" workflow completes, as part of automated release process
-  workflow_run:
-    workflows: ["Draft Tag Release"]
-    push:
-      tags:
-        - '*'
-    types:
-      - completed
+  #workflow_run:
+  #  workflows: ["Draft Tag Release"]
+  #  push:
+  #    tags:
+  #      - '*'
+  #  types:
+  #    - completed
 
 jobs:
   windows-build:
@@ -669,213 +669,213 @@ jobs:
     #####################################################
     - name: 'Upload Artifact - (Portable Build)'
       uses: actions/upload-artifact@v4
-      if: success() && (github.repository == 'Warzone2100/warzone2100')
+      if: success() && (github.repository == 'WinterSnowfall/warzone2100')
       with:
         name: warzone2100_${{ steps.settings.outputs.WZ_BUILD_DESC }}_portable
         path: '${{ github.workspace }}\output\portable'
         if-no-files-found: 'error'
     - name: 'Upload Artifact - (Regular Installer)'
       uses: actions/upload-artifact@v4
-      if: success() && (github.repository == 'Warzone2100/warzone2100')
+      if: success() && (github.repository == 'WinterSnowfall/warzone2100')
       with:
         name: warzone2100_${{ steps.settings.outputs.WZ_BUILD_DESC }}_installer
         path: '${{ github.workspace }}\output\installer'
         if-no-files-found: 'error'
-    - name: 'Upload Artifact - (Debug Symbols)'
-      uses: actions/upload-artifact@v4
-      if: success() && (github.repository == 'Warzone2100/warzone2100')
-      with:
-        name: warzone2100_${{ steps.settings.outputs.WZ_BUILD_DESC }}_DEBUGSYMBOLS
-        path: '${{ github.workspace }}\output\debugsymbols'
-        if-no-files-found: 'error'
-    - name: 'Upload Artifact - (Archive)'
-      uses: actions/upload-artifact@v4
-      if: success() && ((github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Draft Tag Release')) && (matrix.deploy_release == true) && (github.repository == 'Warzone2100/warzone2100')
-      with:
-        name: warzone2100_${{ steps.settings.outputs.WZ_BUILD_DESC }}_archive
-        path: '${{ github.workspace }}\output\archive'
-        if-no-files-found: 'error'
+    #- name: 'Upload Artifact - (Debug Symbols)'
+    #  uses: actions/upload-artifact@v4
+    #  if: success() && (github.repository == 'WinterSnowfall/warzone2100')
+    #  with:
+    #    name: warzone2100_${{ steps.settings.outputs.WZ_BUILD_DESC }}_DEBUGSYMBOLS
+    #    path: '${{ github.workspace }}\output\debugsymbols'
+    #    if-no-files-found: 'error'
+    #- name: 'Upload Artifact - (Archive)'
+    #  uses: actions/upload-artifact@v4
+    #  if: success() && ((github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Draft Tag Release')) && (matrix.deploy_release == true) && (github.repository == 'Warzone2100/warzone2100')
+    #  with:
+    #    name: warzone2100_${{ steps.settings.outputs.WZ_BUILD_DESC }}_archive
+    #    path: '${{ github.workspace }}\output\archive'
+    #    if-no-files-found: 'error'
     #####################################################
     # Generate artifact attestations
     #####################################################
-    - name: 'Generate artifact attestation - (Portable Build)'
-      # Run on push to master branch (development build), or tag release automation build
-      if: success() && ((github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Draft Tag Release'))
-      uses: actions/attest-build-provenance@v1
-      continue-on-error: true
-      with:
-        subject-path: '${{ github.workspace }}\output\portable\*'
-    - name: 'Generate artifact attestation - (Regular Installer)'
-      # Run on push to master branch (development build), or tag release automation build
-      if: success() && ((github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Draft Tag Release'))
-      uses: actions/attest-build-provenance@v1
-      continue-on-error: true
-      with:
-        subject-path: '${{ github.workspace }}\output\installer\*'
-    - name: 'Generate artifact attestation - (Archive)'
-      # Run on push to master branch (development build), or tag release automation build
-      if: success() && ((github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Draft Tag Release'))
-      uses: actions/attest-build-provenance@v1
-      continue-on-error: true
-      with:
-        subject-path: '${{ github.workspace }}\output\archive\*'
+    #- name: 'Generate artifact attestation - (Portable Build)'
+    #  # Run on push to master branch (development build), or tag release automation build
+    #  if: success() && ((github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Draft Tag Release'))
+    #  uses: actions/attest-build-provenance@v1
+    #  continue-on-error: true
+    #  with:
+    #    subject-path: '${{ github.workspace }}\output\portable\*'
+    #- name: 'Generate artifact attestation - (Regular Installer)'
+    #  # Run on push to master branch (development build), or tag release automation build
+    #  if: success() && ((github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Draft Tag Release'))
+    #  uses: actions/attest-build-provenance@v1
+    #  continue-on-error: true
+    #  with:
+    #    subject-path: '${{ github.workspace }}\output\installer\*'
+    #- name: 'Generate artifact attestation - (Archive)'
+    #  # Run on push to master branch (development build), or tag release automation build
+    #  if: success() && ((github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Draft Tag Release'))
+    #  uses: actions/attest-build-provenance@v1
+    #  continue-on-error: true
+    #  with:
+    #    subject-path: '${{ github.workspace }}\output\archive\*'
     #####################################################
     # Upload Release assets (if a release tag)
     #####################################################
-    - name: Upload Release Assets
-      if: success() && (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Draft Tag Release') && (matrix.deploy_release == true) && (github.repository == 'Warzone2100/warzone2100')
-      run: |
-        $SOURCE_TAG = "$($env:WZ_GITHUB_REF -replace "refs/tags/")"
-        gh release upload "${SOURCE_TAG}" "${{ github.workspace }}\output\portable\warzone2100_$($env:WZ_BUILD_DESC)_portable.exe" "${{ github.workspace }}\output\installer\warzone2100_$($env:WZ_BUILD_DESC)_installer.exe" "${{ github.workspace }}\output\debugsymbols\warzone2100_$($env:WZ_BUILD_DESC).DEBUGSYMBOLS.7z" "${{ github.workspace }}\output\archive\warzone2100_$($env:WZ_BUILD_DESC)_archive.zip"
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        GH_REPO: ${{ github.repository }}
-        WZ_GITHUB_REF: ${{ steps.checkout-config.outputs.WZ_GITHUB_REF }}
+    #- name: Upload Release Assets
+    #  if: success() && (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Draft Tag Release') && (matrix.deploy_release == true) && (github.repository == 'Warzone2100/warzone2100')
+    #  run: |
+    #    $SOURCE_TAG = "$($env:WZ_GITHUB_REF -replace "refs/tags/")"
+    #    gh release upload "${SOURCE_TAG}" "${{ github.workspace }}\output\portable\warzone2100_$($env:WZ_BUILD_DESC)_portable.exe" "${{ github.workspace }}\output\installer\warzone2100_$($env:WZ_BUILD_DESC)_installer.exe" "${{ github.workspace }}\output\debugsymbols\warzone2100_$($env:WZ_BUILD_DESC).DEBUGSYMBOLS.7z" "${{ github.workspace }}\output\archive\warzone2100_$($env:WZ_BUILD_DESC)_archive.zip"
+    #  env:
+    #    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    #    GH_REPO: ${{ github.repository }}
+    #    WZ_GITHUB_REF: ${{ steps.checkout-config.outputs.WZ_GITHUB_REF }}
     #####################################################
     # Create Sentry source bundle
     #####################################################
-    - name: Create Sentry source bundle
-      if: success() && (matrix.support_sentry == true)
-      id: create-sentry-source-bundle
-      continue-on-error: true
-      working-directory: '${{ github.workspace }}\sentry_artifacts'
-      env:
-        WZ_REPO_PATH: ${{ steps.settings.outputs.WZ_REPO_PATH }}
-        WZ_ARCHIVE_PATH: '${{ github.workspace }}\output\archive\warzone2100_${{ steps.settings.outputs.WZ_BUILD_DESC }}_archive.zip'
-        WZ_DEBUGSYMBOLS_PATH: '${{ github.workspace }}\output\debugsymbols\warzone2100_${{ steps.settings.outputs.WZ_BUILD_DESC }}.DEBUGSYMBOLS.7z'
-        SOURCE_BUNDLE_OUTPUT_DIR: '${{ github.workspace }}\output\sentry_source_bundles'
-      run: |
-        # Download sentry-cli
-        echo "::group::Downloading sentry-cli ..."
-        cmake -P "${env:WZ_REPO_PATH}/.ci/githubactions/FetchSentryCLI.cmake"
-        echo "Downloading sentry-cli ... Done"
-        echo "::endgroup::"
-        # Extract the WZ archive to a temporary path
-        echo "::group::Expanding archive ..."
-        Expand-Archive -LiteralPath "${env:WZ_ARCHIVE_PATH}" -DestinationPath "$(pwd)\wz_extracted"
-        echo "Expanding archive ... Done"
-        # Extract the debug symbols to the temporary path's "bin" directory
-        $SYMBOLS_OUTPUT_DIR = "$(pwd)\wz_extracted"
-        echo "Extracting debug symbols ..."
-        Start-Process "7z" -ArgumentList "x","${env:WZ_DEBUGSYMBOLS_PATH}","-o${SYMBOLS_OUTPUT_DIR}","-aos" -Wait
-        echo "Extracting debug symbols ... Done"
-        # Remove any .sym files from extracted archive
-        Remove-Item "$(pwd)\wz_extracted\bin\*" -Recurse -Include *.sym
-        Get-ChildItem -Path "$(pwd)\wz_extracted\bin" -Recurse
-        echo "::endgroup::"
-        # Create the Sentry source bundle
-        echo "sentry-cli difutil bundle-sources ..."
-        & "$(pwd)\sentry-cli\sentry-cli.exe" difutil bundle-sources -o "${env:SOURCE_BUNDLE_OUTPUT_DIR}" "$(pwd)\wz_extracted\bin\warzone2100.pdb"
-        echo "sentry-cli difutil bundle-sources ... Done"
-        # List output bundles
-        Get-ChildItem -Path "${env:SOURCE_BUNDLE_OUTPUT_DIR}" -Recurse
-    - name: Upload Sentry source bundles
-      if: success() && (github.repository == 'Warzone2100/warzone2100') && (matrix.support_sentry == true) && (steps.settings.outputs.WZ_ENABLE_SENTRY == 'true') && (steps.create-sentry-source-bundle.outcome == 'success')
-      uses: actions/upload-artifact@v4
-      with:
-        name: 'warzone2100_${{ steps.settings.outputs.WZ_BUILD_DESC }}_debug_sourcebundles'
-        path: '${{ github.workspace }}\output\sentry_source_bundles'
-        retention-days: 1
-        if-no-files-found: 'warn'
-  upload-debug-symbols:
-    strategy:
-      matrix:
-        architecture: ["x86", "x64", "arm64"]
-      fail-fast: false
-    env:
-      WZ_TARGET_ARCH: ${{ matrix.architecture }}
-    name: 'Upload Debug Symbols (${{ matrix.architecture }})'
-    permissions:
-      contents: read
-    runs-on: ubuntu-latest
-    # Run on push to master branch (development build), or tag release automation build
-    if: (github.repository == 'Warzone2100/warzone2100') && ((github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Draft Tag Release'))
-    needs: windows-build
-    environment: upload_symbols
-    # For this job to work, the following secrets must be set in the 'upload_symbols' environment:
-    # SENTRY_AUTH_TOKEN
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-          path: 'src'
-      - name: Prep Environment
-        id: settings
-        run: |
-          mkdir dl-archive
-          mkdir dl-sourcebundle
-          OUTPUTDIR="wz-${WZ_TARGET_ARCH}"
-          echo "OUTPUTDIR=${OUTPUTDIR}" >> $GITHUB_ENV
-          echo "ARCHIVEDIR=${OUTPUTDIR}" >> $GITHUB_OUTPUT
-          echo "WZ_REPO_PATH=$(pwd)/src" >> $GITHUB_ENV
-      - name: Download Archive Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: 'warzone2100_win_${{ matrix.architecture }}_archive'
-          path: ./dl-archive
-      - name: Extract archive
-        run: |
-          ZIPFILE="./dl-archive/warzone2100_win_${WZ_TARGET_ARCH}_archive.zip"
-          unzip -o "${ZIPFILE}" -d "${OUTPUTDIR}" && rm "${ZIPFILE}"
-      - name: Download Debug Symbols Artifact
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          name: 'warzone2100_win_${{ matrix.architecture }}_DEBUGSYMBOLS'
-          path: ./dl-archive
-      - name: Extract Debug Symbols
-        continue-on-error: true
-        run: |
-          ZIPFILE="./dl-archive/warzone2100_win_${WZ_TARGET_ARCH}.DEBUGSYMBOLS.7z"
-          7z x "${ZIPFILE}" -o${OUTPUTDIR} -aos && rm "${ZIPFILE}"
-      - name: Cleanup breakpad symbols
-        run: |
-          # Remove the breakpad symbols (so they are never selected instead of the PDB)
-          BREAKPAD_SYM="${OUTPUTDIR}/bin/warzone2100.sym"
-          if [[ -f "${BREAKPAD_SYM}" ]]; then
-            echo "Removing breakpad .sym"
-            rm "${BREAKPAD_SYM}"
-          fi
-      - name: Download Source Bundle
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          name: 'warzone2100_win_${{ matrix.architecture }}_debug_sourcebundles'
-          path: ./dl-sourcebundle
-      - name: 'Upload debug symbols'
-        env:
-          SENTRY_AUTH_TOKEN: '${{ secrets.SENTRY_AUTH_TOKEN }}'
-          WZ_ARCHIVE_DIR: '${{ steps.settings.outputs.ARCHIVEDIR }}'
-          WZ_SOURCEBUNDLES_DIR: './dl-sourcebundle'
-        run: |
-          if [[ -z "${SENTRY_AUTH_TOKEN}" ]]; then
-            echo "No SENTRY_AUTH_TOKEN - skipping"
-            exit 0
-          fi
-          # Download sentry-cli
-          echo "::group::Downloading sentry-cli ..."
-          cmake -P "${WZ_REPO_PATH}/.ci/githubactions/FetchSentryCLI.cmake"
-          echo "Downloading sentry-cli ... Done"
-          echo "::endgroup::"
-          # Upload symbols
-          echo "::group::sentry-cli debug-files upload"
-          ./sentry-cli/sentry-cli debug-files upload --no-zips -o warzone2100 -p warzone2100 "${WZ_ARCHIVE_DIR}"
-          ./sentry-cli/sentry-cli debug-files upload --type sourcebundle -o warzone2100 -p warzone2100 "${WZ_SOURCEBUNDLES_DIR}"
-          echo "::endgroup::"
-  trigger-updates-json:
-    name: 'Trigger Info Update'
-    permissions:
-      contents: read
-    runs-on: ubuntu-latest
-    if: (github.repository == 'Warzone2100/warzone2100') && (github.ref == 'refs/heads/master')
-    needs: windows-build
-    environment: update_dispatch
-    # For this job to work, the following secrets must be set in the 'update_dispatch' environment:
-    # SITE_DISPATCH_ACCESS_TOKEN
-    steps:
-      - name: 'Trigger updates.json update'
-        run: |
-          curl -X POST https://api.github.com/repos/Warzone2100/update-data/dispatches \
-          -H 'Accept: application/vnd.github.everest-preview+json' \
-          -u ${{ secrets.SITE_DISPATCH_ACCESS_TOKEN }} \
-          --data '{"event_type": "development_build_update", "client_payload": { "repository": "'"$GITHUB_REPOSITORY"'" }}'
+    #- name: Create Sentry source bundle
+    #  if: success() && (matrix.support_sentry == true)
+    #  id: create-sentry-source-bundle
+    #  continue-on-error: true
+    #  working-directory: '${{ github.workspace }}\sentry_artifacts'
+    #  env:
+    #    WZ_REPO_PATH: ${{ steps.settings.outputs.WZ_REPO_PATH }}
+    #    WZ_ARCHIVE_PATH: '${{ github.workspace }}\output\archive\warzone2100_${{ steps.settings.outputs.WZ_BUILD_DESC }}_archive.zip'
+    #    WZ_DEBUGSYMBOLS_PATH: '${{ github.workspace }}\output\debugsymbols\warzone2100_${{ steps.settings.outputs.WZ_BUILD_DESC }}.DEBUGSYMBOLS.7z'
+    #    SOURCE_BUNDLE_OUTPUT_DIR: '${{ github.workspace }}\output\sentry_source_bundles'
+    #  run: |
+    #   # Download sentry-cli
+    #    echo "::group::Downloading sentry-cli ..."
+    #    cmake -P "${env:WZ_REPO_PATH}/.ci/githubactions/FetchSentryCLI.cmake"
+    #    echo "Downloading sentry-cli ... Done"
+    #    echo "::endgroup::"
+    #    # Extract the WZ archive to a temporary path
+    #    echo "::group::Expanding archive ..."
+    #    Expand-Archive -LiteralPath "${env:WZ_ARCHIVE_PATH}" -DestinationPath "$(pwd)\wz_extracted"
+    #    echo "Expanding archive ... Done"
+    #    # Extract the debug symbols to the temporary path's "bin" directory
+    #    $SYMBOLS_OUTPUT_DIR = "$(pwd)\wz_extracted"
+    #    echo "Extracting debug symbols ..."
+    #    Start-Process "7z" -ArgumentList "x","${env:WZ_DEBUGSYMBOLS_PATH}","-o${SYMBOLS_OUTPUT_DIR}","-aos" -Wait
+    #    echo "Extracting debug symbols ... Done"
+    #    # Remove any .sym files from extracted archive
+    #    Remove-Item "$(pwd)\wz_extracted\bin\*" -Recurse -Include *.sym
+    #    Get-ChildItem -Path "$(pwd)\wz_extracted\bin" -Recurse
+    #    echo "::endgroup::"
+    #    # Create the Sentry source bundle
+    #    echo "sentry-cli difutil bundle-sources ..."
+    #    & "$(pwd)\sentry-cli\sentry-cli.exe" difutil bundle-sources -o "${env:SOURCE_BUNDLE_OUTPUT_DIR}" "$(pwd)\wz_extracted\bin\warzone2100.pdb"
+    #    echo "sentry-cli difutil bundle-sources ... Done"
+    #    # List output bundles
+    #    Get-ChildItem -Path "${env:SOURCE_BUNDLE_OUTPUT_DIR}" -Recurse
+    #- name: Upload Sentry source bundles
+    #  if: success() && (github.repository == 'Warzone2100/warzone2100') && (matrix.support_sentry == true) && (steps.settings.outputs.WZ_ENABLE_SENTRY == 'true') && (steps.create-sentry-source-bundle.outcome == 'success')
+    #  uses: actions/upload-artifact@v4
+    #  with:
+    #    name: 'warzone2100_${{ steps.settings.outputs.WZ_BUILD_DESC }}_debug_sourcebundles'
+    #    path: '${{ github.workspace }}\output\sentry_source_bundles'
+    #    retention-days: 1
+    #    if-no-files-found: 'warn'
+  #upload-debug-symbols:
+  #  strategy:
+  #    matrix:
+  #      architecture: ["x86", "x64", "arm64"]
+  #    fail-fast: false
+  #  env:
+  #    WZ_TARGET_ARCH: ${{ matrix.architecture }}
+  #  name: 'Upload Debug Symbols (${{ matrix.architecture }})'
+  #  permissions:
+  #    contents: read
+  #  runs-on: ubuntu-latest
+  #  # Run on push to master branch (development build), or tag release automation build
+  #  if: (github.repository == 'Warzone2100/warzone2100') && ((github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Draft Tag Release'))
+  #  needs: windows-build
+  #  environment: upload_symbols
+  #  # For this job to work, the following secrets must be set in the 'upload_symbols' environment:
+  #  # SENTRY_AUTH_TOKEN
+  #  steps:
+  #    - uses: actions/checkout@v4
+  #      with:
+  #        fetch-depth: 1
+  #        path: 'src'
+  #    - name: Prep Environment
+  #      id: settings
+  #      run: |
+  #        mkdir dl-archive
+  #        mkdir dl-sourcebundle
+  #        OUTPUTDIR="wz-${WZ_TARGET_ARCH}"
+  #        echo "OUTPUTDIR=${OUTPUTDIR}" >> $GITHUB_ENV
+  #        echo "ARCHIVEDIR=${OUTPUTDIR}" >> $GITHUB_OUTPUT
+  #        echo "WZ_REPO_PATH=$(pwd)/src" >> $GITHUB_ENV
+  #    - name: Download Archive Artifact
+  #      uses: actions/download-artifact@v4
+  #      with:
+  #        name: 'warzone2100_win_${{ matrix.architecture }}_archive'
+  #        path: ./dl-archive
+  #    - name: Extract archive
+  #      run: |
+  #        ZIPFILE="./dl-archive/warzone2100_win_${WZ_TARGET_ARCH}_archive.zip"
+  #        unzip -o "${ZIPFILE}" -d "${OUTPUTDIR}" && rm "${ZIPFILE}"
+  #    - name: Download Debug Symbols Artifact
+  #      continue-on-error: true
+  #      uses: actions/download-artifact@v4
+  #      with:
+  #        name: 'warzone2100_win_${{ matrix.architecture }}_DEBUGSYMBOLS'
+  #        path: ./dl-archive
+  #    - name: Extract Debug Symbols
+  #      continue-on-error: true
+  #      run: |
+  #        ZIPFILE="./dl-archive/warzone2100_win_${WZ_TARGET_ARCH}.DEBUGSYMBOLS.7z"
+  #        7z x "${ZIPFILE}" -o${OUTPUTDIR} -aos && rm "${ZIPFILE}"
+  #    - name: Cleanup breakpad symbols
+  #      run: |
+  #        # Remove the breakpad symbols (so they are never selected instead of the PDB)
+  #        BREAKPAD_SYM="${OUTPUTDIR}/bin/warzone2100.sym"
+  #        if [[ -f "${BREAKPAD_SYM}" ]]; then
+  #          echo "Removing breakpad .sym"
+  #          rm "${BREAKPAD_SYM}"
+  #        fi
+  #    - name: Download Source Bundle
+  #      continue-on-error: true
+  #      uses: actions/download-artifact@v4
+  #      with:
+  #        name: 'warzone2100_win_${{ matrix.architecture }}_debug_sourcebundles'
+  #        path: ./dl-sourcebundle
+  #    - name: 'Upload debug symbols'
+  #      env:
+  #        SENTRY_AUTH_TOKEN: '${{ secrets.SENTRY_AUTH_TOKEN }}'
+  #        WZ_ARCHIVE_DIR: '${{ steps.settings.outputs.ARCHIVEDIR }}'
+  #        WZ_SOURCEBUNDLES_DIR: './dl-sourcebundle'
+  #      run: |
+  #        if [[ -z "${SENTRY_AUTH_TOKEN}" ]]; then
+  #          echo "No SENTRY_AUTH_TOKEN - skipping"
+  #          exit 0
+  #        fi
+  #        # Download sentry-cli
+  #        echo "::group::Downloading sentry-cli ..."
+  #        cmake -P "${WZ_REPO_PATH}/.ci/githubactions/FetchSentryCLI.cmake"
+  #        echo "Downloading sentry-cli ... Done"
+  #        echo "::endgroup::"
+  #        # Upload symbols
+  #        echo "::group::sentry-cli debug-files upload"
+  #        ./sentry-cli/sentry-cli debug-files upload --no-zips -o warzone2100 -p warzone2100 "${WZ_ARCHIVE_DIR}"
+  #        ./sentry-cli/sentry-cli debug-files upload --type sourcebundle -o warzone2100 -p warzone2100 "${WZ_SOURCEBUNDLES_DIR}"
+  #        echo "::endgroup::"
+  #trigger-updates-json:
+  #  name: 'Trigger Info Update'
+  #  permissions:
+  #    contents: read
+  #  runs-on: ubuntu-latest
+  #  if: (github.repository == 'Warzone2100/warzone2100') && (github.ref == 'refs/heads/master')
+  #  needs: windows-build
+  #  environment: update_dispatch
+  #  # For this job to work, the following secrets must be set in the 'update_dispatch' environment:
+  #  # SITE_DISPATCH_ACCESS_TOKEN
+  #  steps:
+  #    - name: 'Trigger updates.json update'
+  #      run: |
+  #        curl -X POST https://api.github.com/repos/Warzone2100/update-data/dispatches \
+  #        -H 'Accept: application/vnd.github.everest-preview+json' \
+  #        -u ${{ secrets.SITE_DISPATCH_ACCESS_TOKEN }} \
+  #        --data '{"event_type": "development_build_update", "client_payload": { "repository": "'"$GITHUB_REPOSITORY"'" }}'
